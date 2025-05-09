@@ -7,7 +7,7 @@ export default function App() {
   const containerRef = useRef(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const modelRef = useRef(null);
-  const rotationStart = useRef(null);
+  const rotationY = useRef(0);
   const models = [
     "/models/model1.glb",
     "/models/model2.glb",
@@ -44,34 +44,45 @@ export default function App() {
         model.scale.set(0.3, 0.3, 0.3);
         model.rotation.y = 0;
         modelRef.current = model;
+        rotationY.current = 0;
         scene.add(model);
       });
     };
 
     loadModel(currentIndex);
 
+    let isDragging = false;
+    let previousX = 0;
+
     const handlePointerDown = (e) => {
-      rotationStart.current = e.clientX;
+      isDragging = true;
+      previousX = e.clientX;
     };
 
-    const handlePointerUp = (e) => {
-      if (rotationStart.current === null) return;
-      const dx = e.clientX - rotationStart.current;
-      if (Math.abs(dx) > 50) {
-        // Rotate model visually
-        modelRef.current.rotation.y += dx > 0 ? Math.PI / 2 : -Math.PI / 2;
+    const handlePointerMove = (e) => {
+      if (!isDragging || !modelRef.current) return;
+      const deltaX = e.clientX - previousX;
+      previousX = e.clientX;
 
-        // Switch model after a short delay
-        setTimeout(() => {
-          const nextIndex = (currentIndex + 1) % models.length;
-          setCurrentIndex(nextIndex);
-          loadModel(nextIndex);
-        }, 300);
+      const deltaRotation = deltaX * 0.01;
+      modelRef.current.rotation.y += deltaRotation;
+      rotationY.current += deltaRotation;
+
+      // If model rotated enough, switch
+      if (Math.abs(rotationY.current) >= Math.PI / 2) {
+        isDragging = false;
+        const nextIndex = (currentIndex + 1) % models.length;
+        setCurrentIndex(nextIndex);
+        loadModel(nextIndex);
       }
-      rotationStart.current = null;
+    };
+
+    const handlePointerUp = () => {
+      isDragging = false;
     };
 
     window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", handlePointerUp);
 
     renderer.setAnimationLoop(() => {
@@ -84,6 +95,7 @@ export default function App() {
       }
       document.body.removeChild(arButton);
       window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
     };
   }, [currentIndex]);
