@@ -5,52 +5,89 @@ import { ARButton } from "three/examples/jsm/webxr/ARButton";
 
 export default function App() {
   const containerRef = useRef(null);
-  const rendererRef = useRef(null); // store renderer separately
+  const selectedModelRef = useRef(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
 
-    // Scene, Camera, Renderer
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera();
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    const raycaster = new THREE.Raycaster();
+    const pointer = new THREE.Vector2();
+    const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.xr.enabled = true;
     containerRef.current.appendChild(renderer.domElement);
-    rendererRef.current = renderer;
 
-    // Add AR Button
     const arButton = ARButton.createButton(renderer, {
       requiredFeatures: ["hit-test"],
     });
     document.body.appendChild(arButton);
 
-    // Light
-    const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
-    scene.add(light);
+    scene.add(new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1));
 
-    // Load Model
     const loader = new GLTFLoader();
-    loader.load("/models/glasses.glb", (gltf) => {
-      const model = gltf.scene;
-      model.scale.set(0.3, 0.3, 0.3);
-      model.position.set(0, 0, -1); // 1 meter in front
-      scene.add(model);
+    const modelFiles = [
+      { file: "/models/model1.glb", position: [-0.5, 0, -1] },
+      { file: "/models/model2.glb", position: [0.5, 0, -1] },
+      { file: "/models/model3.glb", position: [0, 0, -2] },
+    ];
+
+    const models = [];
+
+    modelFiles.forEach(({ file, position }) => {
+      loader.load(file, (gltf) => {
+        const model = gltf.scene;
+        model.position.set(...position);
+        model.scale.set(0.3, 0.3, 0.3);
+        scene.add(model);
+        models.push(model);
+      });
     });
 
-    // Animation loop
+    // Pointer down for tap detection
+    const onPointerDown = (event) => {
+      pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
+      pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+      raycaster.setFromCamera(pointer, camera);
+      const intersects = raycaster.intersectObjects(models, true);
+      if (intersects.length > 0) {
+        selectedModelRef.current = intersects[0].object.parent;
+      } else {
+        selectedModelRef.current = null;
+      }
+    };
+
+    // Drag to move model on screen (Z axis stays fixed)
+    const onPointerMove = (event) => {
+      if (!selectedModelRef.current) return;
+
+      pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
+      pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
+      raycaster.setFromCamera(pointer, camera);
+      const newPos = raycaster.ray.origin
+        .clone()
+        .add(raycaster.ray.direction.clone().multiplyScalar(1)); // 1 meter forward
+      selectedModelRef.current.position.x = newPos.x;
+      selectedModelRef.current.position.y = newPos.y;
+    };
+
+    window.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("pointermove", onPointerMove);
+
     renderer.setAnimationLoop(() => {
       renderer.render(scene, camera);
     });
 
-    // Cleanup
     return () => {
-      if (containerRef.current && renderer.domElement) {
+      if (renderer.domElement && containerRef.current) {
         containerRef.current.removeChild(renderer.domElement);
       }
-      if (arButton && arButton.parentNode) {
-        arButton.parentNode.removeChild(arButton);
-      }
+      const button = document.querySelector(".ar-button");
+      if (button) button.remove();
+      window.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("pointermove", onPointerMove);
     };
   }, []);
 
